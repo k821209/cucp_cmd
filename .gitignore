@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+*.egg
+dist/
+build/
+
+# Virtual environments
+venv/
+env/
+.venv/
+.env/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Output directories
+output/
+results/
+results*/
+work/
+
+# BLAST database files
+*.nhr
+*.nin
+*.nsq
+*.ndb
+*.not
+*.ntf
+*.nto
+
+# IQ-TREE intermediate files
+*.iqtree
+*.treefile
+*.log
+*.ckp.gz
+*.bionj
+*.mldist
+*.model.gz
+*.splits.nex
+*.contree
+*.uniqueseq.phy
+
+# Temporary files
+*.tmp
+*.temp
+
+# macOS
+.DS_Store
+
+# Reference databases (large files - download separately)
+# Uncomment if you don't want to track reference files:
+# *.fa
+# *.fasta
