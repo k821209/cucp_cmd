@@ -62,6 +62,21 @@ def setup_permissions():
             os.chmod(binary, 0o755)
 
 
+def format_sequence_name(header):
+    """
+    Format FASTA header to 'Genus_species_(Accession)' format.
+    Input: "AM711640.1 Cuscuta reflexa complete chloroplast genome"
+    Output: "Cuscuta_reflexa_(AM711640.1)"
+    """
+    parts = header.split()
+    if len(parts) >= 3:
+        accession = parts[0]
+        genus_species = '_'.join(parts[1:3])
+        return f"{genus_species}_({accession})"
+    else:
+        return '_'.join(parts)
+
+
 def read_fasta(fasta_path):
     """Read a FASTA file and return a dictionary of {name: sequence}."""
     sequences = {}
@@ -74,7 +89,9 @@ def read_fasta(fasta_path):
             if line.startswith('>'):
                 if current_name:
                     sequences[current_name] = ''.join(current_seq)
-                current_name = line[1:].split()[0]  # Take first word after >
+                # Format the header as Genus_species_(Accession)
+                header = line[1:]
+                current_name = format_sequence_name(header)
                 current_seq = []
             else:
                 current_seq.append(line)
@@ -124,15 +141,15 @@ def generate_fasta_from_dataframe(df_var):
     return '\n'.join(fasta_lines)
 
 
-def run_blast(query_fasta, reference_fasta, work_dir, sample_name="query"):
+def run_blast(query_fastas, sample_names, reference_fasta, work_dir):
     """
-    Run BLAST analysis.
+    Run BLAST analysis with multiple query files.
 
     Args:
-        query_fasta: Path to query FASTA file
+        query_fastas: List of paths to query FASTA files
+        sample_names: List of sample names (same length as query_fastas)
         reference_fasta: Path to reference FASTA file
         work_dir: Working directory for intermediate files
-        sample_name: Name for the sample
 
     Returns:
         dict with status and results
@@ -141,18 +158,35 @@ def run_blast(query_fasta, reference_fasta, work_dir, sample_name="query"):
         work_dir = Path(work_dir)
         work_dir.mkdir(parents=True, exist_ok=True)
 
-        # Read and merge reference with query
+        # Read and merge reference with queries
         merged_path = work_dir / "merged.fa"
 
-        # Copy reference sequences
+        # Read reference sequences
         ref_seqs = read_fasta(reference_fasta)
-        query_seqs = read_fasta(query_fasta)
 
-        # Merge sequences
-        merged_seqs = {**ref_seqs, **query_seqs}
-        write_fasta(merged_seqs, merged_path)
+        # Write merged FASTA file
+        # Reference sequences keep their formatted names (Genus_species_(Accession))
+        # Each sample's contigs use the SAME header (sample_name) to merge into one column
+        total_contigs = 0
+        with open(merged_path, 'w') as f:
+            # Write reference sequences
+            for name, seq in ref_seqs.items():
+                f.write(f">{name}\n")
+                for i in range(0, len(seq), 80):
+                    f.write(f"{seq[i:i+80]}\n")
 
-        print(f"Merged {len(ref_seqs)} reference sequences with {len(query_seqs)} query sequences")
+            # Write each sample's sequences
+            for query_fasta, sample_name in zip(query_fastas, sample_names):
+                query_seqs = read_fasta(query_fasta)
+                # All contigs from this sample use the same header
+                for seq in query_seqs.values():
+                    f.write(f">{sample_name}\n")
+                    for i in range(0, len(seq), 80):
+                        f.write(f"{seq[i:i+80]}\n")
+                total_contigs += len(query_seqs)
+                print(f"  - {sample_name}: {len(query_seqs)} contig(s)")
+
+        print(f"Merged {len(ref_seqs)} reference sequences with {total_contigs} query contigs from {len(sample_names)} sample(s)")
 
         # Create BLAST database
         db_path = work_dir / "blastdb"
@@ -173,7 +207,7 @@ def run_blast(query_fasta, reference_fasta, work_dir, sample_name="query"):
         write_fasta({base_name: ref_seqs[base_name]}, base_path)
 
         # Run BLAST
-        blast_output = work_dir / f"{sample_name}_blast_results.txt"
+        blast_output = work_dir / "blast_results.txt"
         blast_cmd = [
             str(BLAST_PATH),
             "-task", "blastn",
@@ -201,7 +235,7 @@ def run_blast(query_fasta, reference_fasta, work_dir, sample_name="query"):
             "status": "success",
             "blast_results": blast_results,
             "base_sequence": ref_seqs[base_name],
-            "query_names": list(query_seqs.keys())
+            "query_names": sample_names  # List of all sample names
         }
 
     except Exception as e:
@@ -241,9 +275,13 @@ def process_blast_results(blast_json_str, base_sequence, query_names, run_iqtree
         for hit in blast_data['BlastOutput2']['report']['results']['search']['hits']:
             title_parts = hit['description'][0]['title'].split()
 
-            # Extract scientific name
+            # Extract scientific name: format as "Genus_species_(Accession)"
+            # Input format: "AM711640.1 Cuscuta reflexa complete chloroplast genome"
+            # Output format: "Cuscuta_reflexa_(AM711640.1)"
             if len(title_parts) >= 3:
-                scientific_name = '_'.join(title_parts[0:3])
+                accession = title_parts[0]
+                genus_species = '_'.join(title_parts[1:3])
+                scientific_name = f"{genus_species}_({accession})"
             else:
                 scientific_name = '_'.join(title_parts)
 
@@ -527,14 +565,18 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  # Basic BLAST analysis
-  python cucp_blast.py -r reference.fa -q query.fa -o results/
+  # Single sample analysis
+  python cucp_blast.py -r reference.fa -q query.fa -o results/ -n "Cuscuta_sample1"
+
+  # Multiple samples with explicit names
+  python cucp_blast.py -r reference.fa -q sample1.fa sample2.fa sample3.fa \\
+      -o results/ -n "Sample_A" "Sample_B" "Sample_C"
+
+  # Multiple samples (names derived from filenames)
+  python cucp_blast.py -r reference.fa -q sample1.fa sample2.fa -o results/
 
   # With phylogenetic tree construction
   python cucp_blast.py -r reference.fa -q query.fa -o results/ --run-iqtree
-
-  # Specify sample name
-  python cucp_blast.py -r reference.fa -q query.fa -o results/ -n "Cuscuta_sample1"
         """
     )
 
@@ -547,7 +589,8 @@ Examples:
     parser.add_argument(
         '-q', '--query',
         required=True,
-        help='Path to query FASTA file'
+        nargs='+',
+        help='Path to query FASTA file(s). Multiple files = multiple samples.'
     )
 
     parser.add_argument(
@@ -558,8 +601,10 @@ Examples:
 
     parser.add_argument(
         '-n', '--name',
-        default='query_sample',
-        help='Sample name (default: query_sample)'
+        nargs='*',
+        default=None,
+        help='Sample name(s). For multiple queries, provide names in same order. '
+             'If not provided, names are derived from filenames.'
     )
 
     parser.add_argument(
@@ -576,14 +621,29 @@ Examples:
 
     args = parser.parse_args()
 
-    # Validate inputs
+    # Validate reference file
     if not os.path.exists(args.reference):
         print(f"Error: Reference file not found: {args.reference}")
         sys.exit(1)
 
-    if not os.path.exists(args.query):
-        print(f"Error: Query file not found: {args.query}")
-        sys.exit(1)
+    # Validate query files (now a list)
+    query_files = args.query
+    for qf in query_files:
+        if not os.path.exists(qf):
+            print(f"Error: Query file not found: {qf}")
+            sys.exit(1)
+
+    # Prepare sample names
+    if args.name:
+        # Names provided - validate count matches
+        if len(args.name) != len(query_files):
+            print(f"Error: Number of names ({len(args.name)}) must match "
+                  f"number of query files ({len(query_files)})")
+            sys.exit(1)
+        sample_names = args.name
+    else:
+        # Auto-generate names from filenames
+        sample_names = [Path(f).stem for f in query_files]
 
     # Setup paths
     output_dir = Path(args.output)
@@ -617,9 +677,10 @@ Examples:
     print("CUCP BLAST Analysis Tool")
     print("=" * 60)
     print(f"Reference: {args.reference}")
-    print(f"Query: {args.query}")
+    print(f"Query files: {len(query_files)} file(s)")
+    for qf, sn in zip(query_files, sample_names):
+        print(f"  - {qf} -> {sn}")
     print(f"Output: {output_dir}")
-    print(f"Sample name: {args.name}")
     print(f"Run IQ-TREE: {args.run_iqtree}")
     print("=" * 60)
 
@@ -628,10 +689,10 @@ Examples:
     # Run BLAST
     print("\n[Step 1/2] Running BLAST analysis...")
     blast_results = run_blast(
-        args.query,
+        query_files,
+        sample_names,
         args.reference,
-        work_dir,
-        args.name
+        work_dir
     )
 
     if blast_results["status"] != "success":

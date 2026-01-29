@@ -26,10 +26,30 @@ pip install -r requirements.txt
 
 ## Usage
 
-### Basic BLAST Analysis
+### Single Sample Analysis
 
 ```bash
+# With explicit sample name
+python cucp_blast.py -r reference.fa -q query.fa -o results/ -n "Cuscuta_sample1"
+
+# Name derived from filename (will use "query" as sample name)
 python cucp_blast.py -r reference.fa -q query.fa -o results/
+```
+
+### Multiple Samples Analysis
+
+```bash
+# Multiple samples with explicit names
+python cucp_blast.py -r reference.fa \
+  -q sample1.fa sample2.fa sample3.fa \
+  -o results/ \
+  -n "Sample_A" "Sample_B" "Sample_C"
+
+# Multiple samples with names derived from filenames
+python cucp_blast.py -r reference.fa \
+  -q sample1.fa sample2.fa sample3.fa \
+  -o results/
+# Names will be: sample1, sample2, sample3
 ```
 
 ### With Phylogenetic Tree Construction
@@ -43,9 +63,9 @@ python cucp_blast.py -r reference.fa -q query.fa -o results/ --run-iqtree
 ```bash
 python cucp_blast.py \
   --reference reference.fa \
-  --query query.fa \
+  --query sample1.fa sample2.fa \
   --output results/ \
-  --name "Cuscuta_sample1" \
+  --name "Sample_A" "Sample_B" \
   --run-iqtree \
   --work-dir /tmp/work
 ```
@@ -54,12 +74,22 @@ python cucp_blast.py \
 
 | Argument | Short | Required | Description |
 |----------|-------|----------|-------------|
-| `--reference` | `-r` | Yes | Path to reference FASTA file (first sequence used as base) |
-| `--query` | `-q` | Yes | Path to sample FASTA file (your sequences to analyze) |
+| `--reference` | `-r` | Yes | Path to reference FASTA file (first sequence used as anchoring base) |
+| `--query` | `-q` | Yes | Path to query FASTA file(s). Multiple files = multiple samples |
 | `--output` | `-o` | Yes | Output directory for results |
-| `--name` | `-n` | No | Sample name (default: query_sample) |
+| `--name` | `-n` | No | Sample name(s). Must match number of query files. If not provided, names are derived from filenames |
 | `--run-iqtree` | | No | Run IQ-TREE for phylogenetic tree construction |
 | `--work-dir` | `-w` | No | Working directory for intermediate files |
+
+### Multiple Contigs/Scaffolds
+
+Each query file can contain multiple sequences (contigs/scaffolds). All sequences within a single file are treated as belonging to the **same sample** and will be merged into one column in the output matrix.
+
+If your sample has multiple scaffold files, concatenate them first:
+```bash
+cat scaffold1.fa scaffold2.fa scaffold3.fa > my_sample.fa
+python cucp_blast.py -r reference.fa -q my_sample.fa -o results/ -n "My_Sample"
+```
 
 ## Output Files
 
@@ -74,34 +104,58 @@ The tool generates the following output files:
 - `phylogenetic_tree.nwk` - Newick format tree file
 - `phylogenetic_tree.png` - Tree visualization
 
-## Example
+## Examples
 
-Using reference sequences from the CUCP database:
+### Single Sample with CP Genome Reference
 
 ```bash
-# Using CP genome reference
 python cucp_blast.py \
-  -r ref_250905_nocassytha_noam711639.fa \
+  -r ref/ref_250905_nocassytha_noam711639.fa \
   -q my_sample.fa \
   -o output/ \
+  -n "Cuscuta_japonica_Korea" \
   --run-iqtree
+```
 
-# Using trnL-F reference
+### Multiple Samples
+
+```bash
 python cucp_blast.py \
-  -r ref_trnlf_250904_costea_2025.fa \
-  -q my_trnlf_sample.fa \
-  -o output_trnlf/
+  -r ref/ref_250905_nocassytha_noam711639.fa \
+  -q sample_korea.fa sample_japan.fa sample_china.fa \
+  -o output/ \
+  -n "C_japonica_Korea" "C_japonica_Japan" "C_chinensis_China" \
+  --run-iqtree
+```
+
+### Batch Analysis (names from filenames)
+
+```bash
+# Analyze all .fa files in a directory
+python cucp_blast.py \
+  -r ref/ref_250905_nocassytha_noam711639.fa \
+  -q samples/*.fa \
+  -o batch_results/
 ```
 
 ## Reference Databases
 
-Available reference databases:
+Reference databases are located in the `ref/` directory.
+
+### Included Reference
+
+| File | Description |
+|------|-------------|
+| `ref/ref_250905_nocassytha_noam711639.fa` | CP genome reference (without Cassytha, recommended for most analyses) |
+
+### Additional References (from CUCP web application)
+
+Additional reference databases can be obtained from the main CUCP project (`blast/data/`):
 
 | File | Description |
 |------|-------------|
 | `ref_250905_noam711639.fa` | CP genome reference (with Cassytha) |
-| `ref_250905_nocassytha_noam711639.fa` | CP genome reference (without Cassytha) |
-| `ref_trnlf_250904_costea_2025.fa` | trnL-F reference database |
+| `ref_trnlf_250904_costea_2025.fa` | trnL-F reference database (Costea 2025 expanded) |
 
 ## Preparing a Custom Reference File
 
@@ -110,13 +164,20 @@ The **first sequence** in your reference file is used as the anchoring sequence 
 ### Reference File Format
 
 ```
->Anchoring_Sequence_Name description
-ATGCATGCATGC...
->Reference_Species_1 description
-ATGCATGCATGC...
->Reference_Species_2 description
+>Accession Genus species description
 ATGCATGCATGC...
 ```
+
+Example:
+```
+>AM711640.1 Cuscuta reflexa complete chloroplast genome
+ATGCATGCATGC...
+>MN866891.1 Cuscuta australis chloroplast complete genome
+ATGCATGCATGC...
+```
+
+The tool parses headers and outputs sample names as `Genus_species_(Accession)`:
+- `>AM711640.1 Cuscuta reflexa ...` → `Cuscuta_reflexa_(AM711640.1)`
 
 ### Guidelines
 
