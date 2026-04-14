@@ -608,6 +608,14 @@ Examples:
     )
 
     parser.add_argument(
+        '-m', '--multi-sample',
+        action='store_true',
+        help='Treat each sequence in a query FASTA file as a separate sample '
+             '(each sequence = one complete cp genome). '
+             'Without this flag, all sequences in one file are treated as contigs of the same sample.'
+    )
+
+    parser.add_argument(
         '--run-iqtree',
         action='store_true',
         help='Run IQ-TREE for phylogenetic tree construction'
@@ -633,8 +641,35 @@ Examples:
             print(f"Error: Query file not found: {qf}")
             sys.exit(1)
 
-    # Prepare sample names
-    if args.name:
+    # Prepare sample names and handle --multi-sample mode
+    if args.multi_sample:
+        # In multi-sample mode, expand each query file into individual samples
+        # Each sequence in the file becomes a separate sample
+        expanded_query_files = []
+        expanded_sample_names = []
+
+        for qf in query_files:
+            seqs = read_fasta(qf)
+            if len(seqs) == 0:
+                print(f"Error: No sequences found in {qf}")
+                sys.exit(1)
+            for seq_name, seq_data in seqs.items():
+                # Write each sequence to a temporary file
+                tmp_dir = Path(args.work_dir) if args.work_dir else Path(args.output) / "work"
+                tmp_dir.mkdir(parents=True, exist_ok=True)
+                tmp_path = tmp_dir / f"multisample_{seq_name.replace('/', '_').replace(' ', '_')}.fa"
+                write_fasta({seq_name: seq_data}, tmp_path)
+                expanded_query_files.append(str(tmp_path))
+                expanded_sample_names.append(seq_name)
+
+        if args.name:
+            print("Warning: --name is ignored in --multi-sample mode "
+                  "(names are derived from FASTA headers)")
+
+        query_files = expanded_query_files
+        sample_names = expanded_sample_names
+        print(f"Multi-sample mode: expanded {len(args.query)} file(s) into {len(query_files)} samples")
+    elif args.name:
         # Names provided - validate count matches
         if len(args.name) != len(query_files):
             print(f"Error: Number of names ({len(args.name)}) must match "
@@ -677,7 +712,8 @@ Examples:
     print("CUCP BLAST Analysis Tool")
     print("=" * 60)
     print(f"Reference: {args.reference}")
-    print(f"Query files: {len(query_files)} file(s)")
+    print(f"Mode: {'multi-sample (each sequence = separate sample)' if args.multi_sample else 'standard (each file = one sample)'}")
+    print(f"Samples: {len(sample_names)}")
     for qf, sn in zip(query_files, sample_names):
         print(f"  - {qf} -> {sn}")
     print(f"Output: {output_dir}")

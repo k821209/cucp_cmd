@@ -28,6 +28,10 @@ results/
 results*/
 work/
 
+# Input directories (large data files)
+input/
+input*/
+
 # BLAST database files
 *.nhr
 *.nin
