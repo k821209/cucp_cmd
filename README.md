@@ -52,6 +52,18 @@ python cucp_blast.py -r reference.fa \
 # Names will be: sample1, sample2, sample3
 ```
 
+### Multi-Sample FASTA (one file, multiple complete genomes)
+
+Use `-m` / `--multi-sample` when a single FASTA file contains multiple complete cp genomes and each sequence should be treated as a separate sample. Sample names are automatically derived from FASTA headers (`Genus_species_(Accession)`).
+
+```bash
+# Each sequence in the file becomes its own sample
+python cucp_blast.py -r reference.fa -q all_genomes.fa -o results/ -m
+
+# With tree construction
+python cucp_blast.py -r reference.fa -q all_genomes.fa -o results/ -m --run-iqtree
+```
+
 ### With Phylogenetic Tree Construction
 
 ```bash
@@ -66,6 +78,7 @@ python cucp_blast.py \
   --query sample1.fa sample2.fa \
   --output results/ \
   --name "Sample_A" "Sample_B" \
+  --multi-sample \
   --run-iqtree \
   --work-dir /tmp/work
 ```
@@ -77,18 +90,26 @@ python cucp_blast.py \
 | `--reference` | `-r` | Yes | Path to reference FASTA file (first sequence used as anchoring base) |
 | `--query` | `-q` | Yes | Path to query FASTA file(s). Multiple files = multiple samples |
 | `--output` | `-o` | Yes | Output directory for results |
-| `--name` | `-n` | No | Sample name(s). Must match number of query files. If not provided, names are derived from filenames |
+| `--name` | `-n` | No | Sample name(s). Must match number of query files. If not provided, names are derived from filenames. Ignored in `--multi-sample` mode |
+| `--multi-sample` | `-m` | No | Treat each sequence in a query FASTA as a separate sample (each sequence = one complete cp genome) |
 | `--run-iqtree` | | No | Run IQ-TREE for phylogenetic tree construction |
 | `--work-dir` | `-w` | No | Working directory for intermediate files |
 
-### Multiple Contigs/Scaffolds
+### Input Modes
 
-Each query file can contain multiple sequences (contigs/scaffolds). All sequences within a single file are treated as belonging to the **same sample** and will be merged into one column in the output matrix.
+**Default mode** (without `-m`): Each query file can contain multiple sequences (contigs/scaffolds). All sequences within a single file are treated as belonging to the **same sample** and will be merged into one column in the output matrix.
 
-If your sample has multiple scaffold files, concatenate them first:
 ```bash
+# Multiple contigs from scaffold files → one sample
 cat scaffold1.fa scaffold2.fa scaffold3.fa > my_sample.fa
 python cucp_blast.py -r reference.fa -q my_sample.fa -o results/ -n "My_Sample"
+```
+
+**Multi-sample mode** (`-m`): Each sequence in the FASTA file is treated as a **separate sample** with its own complete cp genome. Sample names are derived from FASTA headers automatically.
+
+```bash
+# One file with 50 complete cp genomes → 50 separate samples
+python cucp_blast.py -r reference.fa -q all_genomes.fa -o results/ -m
 ```
 
 ## Output Files
@@ -126,6 +147,17 @@ python cucp_blast.py \
   -o output/ \
   -n "C_japonica_Korea" "C_japonica_Japan" "C_chinensis_China" \
   --run-iqtree
+```
+
+### Multi-Sample FASTA (complete cp genomes in one file)
+
+```bash
+# Each sequence in the file is analyzed as a separate sample
+python cucp_blast.py \
+  -r ref/ref_250905_nocassytha_noam711639.fa \
+  -q Cuscuta_cp_genomes.fa \
+  -o output/ \
+  -m --run-iqtree
 ```
 
 ### Batch Analysis (names from filenames)
